@@ -1,0 +1,14 @@
+spec_version: 1
+name: fms_env
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+
+tasks:
+  - id: "easy_delivery"
+    description: "Move 1 box to dropzone with high battery."
+  - id: "multi_order"
+    description: "Coordinate 2 robots to move 4 boxes."
+  - id: "hard_fleet"
+    description: "8 boxes with high battery drain; requires charging strategy."

@@ -3,8 +3,8 @@ import uvicorn
 
 from openenv.core.env_server.http_server import create_app
 # ✅ Use absolute imports (clean + correct for `-m` execution)
-from fms_env.models import FmsAction, FmsObservation
-from fms_env.server.fms_env_environment import FmsEnvironment
+from models import FmsAction, FmsObservation
+from server.fms_env_environment import FmsEnvironment
 
 
 # Create OpenEnv app

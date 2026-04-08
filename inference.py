@@ -1,149 +1,125 @@
 import asyncio
 import os
-import textwrap
-from typing import List, Optional
+from typing import List
 from openai import OpenAI
 
-# ✅ Import your specific FMS models and environment
-from fms_env.models import FmsAction, FmsObservation
-from fms_env.server.fms_env_environment import FmsEnvironment as FmsEnv
+from models import FmsAction, FmsObservation
+from server.fms_env_environment import FmsEnvironment as FmsEnv
 
-# Environment Setup
-IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+# ================= CONFIG =================
+API_KEY = os.environ["API_KEY"]          # ✅ MUST (validator injects)
+API_BASE_URL = os.environ["API_BASE_URL"]
 
-# Benchmark Config
-TASK_NAME = os.getenv("FMS_TASK", "warehouse-delivery")
-BENCHMARK = os.getenv("FMS_BENCHMARK", "fms_warehouse_fleet")
-MAX_STEPS = 20  # Increased for multi-robot navigation
-TEMPERATURE = 0.2 # Lower temperature for more logical planning
-MAX_TOKENS = 100
-SUCCESS_SCORE_THRESHOLD = 0.5  # Need at least half the boxes delivered
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 
-# Normalized Score Logic: Adjust based on your max possible reward
-MAX_TOTAL_REWARD = 10.0 
+MAX_STEPS = 15
+SUCCESS_THRESHOLD = 0.5
+MAX_TOTAL_REWARD = 10.0
 
-SYSTEM_PROMPT = textwrap.dedent(
-    """
-    You are a Fleet Management AI controlling multiple robots in a 2D warehouse grid.
-    GOAL: Navigate robots to pick up boxes and deliver them to drop zones.
-    CONSTRAINTS: Avoid collisions and monitor battery levels.
-    
-    Current actions available: "move_north", "move_south", "move_east", "move_west", "pick_up", "drop_off", "wait".
-    
-    Reply with exactly one action in this format: robot_id:action_type
-    Example: 1:move_north
-    """
-).strip()
+# ✅ MUST match openenv.yaml
+TASKS = ["easy_delivery", "multi_order", "hard_fleet"]
 
-def log_start(task: str, env: str, model: str) -> None:
+# ================= LOGGING =================
+def log_start(task, env, model):
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
-def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
-    error_val = error if error else "null"
-    done_val = str(done).lower()
-    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
+def log_step(step, action, reward, done):
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()}", flush=True)
 
-def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+def log_end(success, steps, score):
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f}", flush=True)
 
-def build_user_prompt(step: int, obs: FmsObservation, history: List[str]) -> str:
-    # Summarize the warehouse state for the LLM
-    robot_info = "\n".join([f"Robot {rid}: Pos {pos}, Battery {obs.battery_levels.get(rid)}%" 
-                            for rid, pos in obs.robot_positions.items()])
-    
-    return textwrap.dedent(
-        f"""
-        Step: {step}
-        --- Current Warehouse State ---
-        {robot_info}
-        Box Locations: {obs.box_locations}
-        
-        Recent History:
-        {" | ".join(history[-3:]) if history else "None"}
-        
-        Decide the next action for one robot:
-        """
-    ).strip()
-
-def get_model_action(client: OpenAI, step: int, obs: FmsObservation, history: List[str]) -> FmsAction:
-    user_prompt = build_user_prompt(step, obs, history)
+# ================= ACTION PARSER =================
+def parse_actions(text: str, num_robots: int) -> List[int]:
     try:
-        completion = client.chat.completions.create(
+        nums = list(map(int, text.strip().split()))
+        if len(nums) < num_robots:
+            nums += [4] * (num_robots - len(nums))
+        return nums[:num_robots]
+    except:
+        return [4] * num_robots
+
+# ================= MODEL CALL =================
+def get_action(client, obs: FmsObservation) -> FmsAction:
+    try:
+        response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
+                {
+                    "role": "system",
+                    "content": "Return only integers like: 0 3 (one per robot). No text."
+                },
+                {
+                    "role": "user",
+                    "content": f"Observations: {obs.observations}"
+                }
             ],
-            temperature=TEMPERATURE,
-            max_tokens=MAX_TOKENS,
+            temperature=0.2,
+            max_tokens=50,
         )
-        raw_text = (completion.choices[0].message.content or "").strip()
-        
-        # Parse "robot_id:action" string (e.g., "1:move_north")
-        parts = raw_text.split(":")
-        rid = int(parts[0]) if len(parts) > 0 and parts[0].isdigit() else 0
-        act = parts[1] if len(parts) > 1 else "wait"
-        
-        return FmsAction(robot_id=rid, action_type=act)
-    except Exception as exc:
-        print(f"[DEBUG] Model failed: {exc}", flush=True)
-        return FmsAction(robot_id=0, action_type="wait")
 
-async def main() -> None:
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        text = (response.choices[0].message.content or "").strip()
 
-    # Initialize your environment
-    # Note: If not using Docker, use FmsEnv() directly. 
-    # If using Docker, keep the from_docker_image method.
-    env = await FmsEnv.from_docker_image(IMAGE_NAME) if IMAGE_NAME else FmsEnv()
+        actions = parse_actions(text, len(obs.observations))
 
-    history: List[str] = []
-    rewards: List[float] = []
-    steps_taken = 0
-    score = 0.0
-    success = False
+        return FmsAction(actions=actions)
 
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+    except Exception as e:
+        print("[MODEL ERROR]", e, flush=True)
+        return FmsAction(actions=[4] * len(obs.observations))  # fallback
 
-    try:
-        # Reset returns the first observation
-        obs = await env.reset()
-        
-        for step in range(1, MAX_STEPS + 1):
-            action_obj = get_model_action(client, step, obs, history)
-            
-            # Execute step
-            result = await env.step(action_obj)
-            obs = result.observation
-            reward = result.reward or 0.0
-            done = result.done
-            
-            rewards.append(reward)
-            steps_taken = step
-            
-            action_str = f"{action_obj.robot_id}:{action_obj.action_type}"
-            log_step(step=step, action=action_str, reward=reward, done=done, error=None)
+# ================= MAIN =================
+async def main():
+    client = OpenAI(
+        base_url=API_BASE_URL,
+        api_key=API_KEY
+    )
 
-            history.append(f"S{step}: {action_str} (R:{reward})")
+    # 🔥 RUN ALL TASKS
+    for task in TASKS:
 
-            if done:
-                break
+        env = FmsEnv(task_id=task)
+        obs = env.reset()
 
-        # Calculate final score (normalized 0.0 to 1.0)
-        total_r = sum(rewards)
-        score = min(max(total_r / MAX_TOTAL_REWARD, 0.0), 1.0)
-        success = score >= SUCCESS_SCORE_THRESHOLD
+        rewards = []
+        success = False
+        score = 0.0
 
-    finally:
+        # ✅ START LOG (per task)
+        log_start(task, "fms_warehouse_fleet", MODEL_NAME)
+
         try:
-            await env.close()
-        except Exception:
-            pass
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+            for step in range(1, MAX_STEPS + 1):
 
+                action_obj = get_action(client, obs)
+                actions = action_obj.actions
+
+                obs = env.step(action_obj)
+
+                reward = obs.reward or 0.0
+                done = obs.done
+
+                rewards.append(reward)
+
+                # ✅ STEP LOG
+                log_step(step, actions, reward, done)
+
+                if done:
+                    break
+
+            # ✅ SCORE FIX (0 < score < 1)
+            total = sum(rewards)
+            raw_score = total / MAX_TOTAL_REWARD
+            score = max(0.01, min(raw_score, 0.99))
+
+            success = score >= SUCCESS_THRESHOLD
+
+        finally:
+            env.close()
+
+            # ✅ END LOG (per task)
+            log_end(success, len(rewards), score)
+
+# ================= RUN =================
 if __name__ == "__main__":
     asyncio.run(main())

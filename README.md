@@ -1,93 +1,192 @@
-# RL-Based Multi-Robot Fleet Management System
+# Multi-Robot Fleet Management System (FMS)
+
 ## Overview
-This project implements a Reinforcement Learning-based Fleet Management System in a 2D grid
-environment. Multiple robots navigate, pick up boxes, deliver them to drop zones, avoid collisions,
-and manage battery efficiently.
+This project implements a **Fleet Management System (FMS)** in a 2D grid-based warehouse environment.  
+Multiple robots navigate, pick up boxes, deliver them to drop zones, avoid collisions, and manage battery levels.
+
+
+
 ---
-## Environment Design
-### Grid Representation
-- 0: Free Space
-- 1: Obstacle
-- 2: Charging Station
-- 3: Box (Pickup)
-- 4: Drop Location
-- 5: Robot
+
+## What is FMS (Fleet Management System)?
+
+A Fleet Management System is responsible for:
+- Assigning tasks to robots
+- Planning paths for navigation
+- Avoiding collisions
+- Managing resources like battery
+
+In real-world warehouses (like Amazon), FMS ensures efficient and safe robot coordination.
+
 ---
-## Robot Capabilities
-- Movement in 4 directions + stay
+
+## Without RL (Current Implementation)
+
+In this project, robots operate using:
+
+### 🔹 Path Planning
+- Grid-based movement (Up, Down, Left, Right)
+- Local navigation using 5x5 observation window
+- Distance-based movement towards target
+
+### 🔹 Task Allocation
+- If robot is **not carrying** → nearest **box assigned**
+- If robot is **carrying** → nearest **drop zone assigned**
+
+### 🔹 Collision Avoidance
+- Swap detection (robots swapping positions blocked)
+- Destination conflict handling (multiple robots same cell blocked)
+
+### 🔹 Battery Handling (Basic)
 - Battery decreases every step
-- Picks up and drops boxes
-- Uses LiDAR-like local perception
-- Avoids collisions with obstacles and other robots
+- Charging stations restore battery
+- No intelligent scheduling (rule-based)
+
+👉 This is mostly **rule-based + heuristic system**
+
 ---
+
+## With RL (Future Scope)
+
+If Reinforcement Learning is applied, system becomes much smarter:
+
+### 🚀 Advanced Capabilities with RL
+- Learn **optimal task allocation**
+- Minimize **total travel time**
+- Reduce **collisions automatically**
+- Learn **when to charge vs when to deliver**
+- Handle **multi-robot coordination dynamically**
+
+### 🔋 Battery Optimization
+- Decide best time to go to charger
+- Avoid unnecessary charging
+- Balance delivery vs charging
+
+### 📉 Performance Improvements
+- Fewer collisions
+- Faster deliveries
+- Better resource utilization
+
+---
+
+## Environment Design
+
+### Grid Representation
+- 0: Free Space  
+- 1: Obstacle  
+- 2: Charging Station  
+- 3: Box (Pickup)  
+- 4: Drop Location  
+- 5: Robot  
+
+---
+
+## Robot Capabilities
+- Move in 4 directions + stay
+- Pick and drop boxes
+- Battery consumption per step
+- Local perception (5x5 grid like LiDAR)
+- Collision avoidance
+
+---
+
 ## Core Features
+
 ### 1. Multi-Robot Coordination
 - Multiple robots operate simultaneously
-- Collision avoidance using:
-- swap detection
-- destination conflict handling
-### 2. Task Allocation
-- Robots automatically assigned nearest target:
-- Box if not carrying
-- Drop if carrying
+- Collision handling:
+  - Swap conflict prevention
+  - Destination conflict resolution
+
+### 2. Task Allocation (Rule-Based)
+- Nearest box assigned if not carrying
+- Nearest drop assigned if carrying
+
 ### 3. Battery Management
-- Battery decreases per step
-- If battery ≤ 40%, robot prioritizes charging
-- Charging stations restore battery
+- Battery decreases each step
+- Charging station restores battery
+- Low battery threshold triggers charging (basic logic)
+
 ---
-## Reward System
+
+## Reward System (for RL compatibility)
+
 ### Positive Rewards
-- +50 → Successful delivery
-- +5 → Picking up box
-- +200 → All deliveries completed
-- +1 → Charging when battery is low
-- +distance improvement reward → moving closer to target
+- +50 → Delivery completed  
+- +5 → Box picked  
+- +200 → All deliveries completed  
+- +1 → Charging when battery is low  
+- +distance improvement → moving closer to target  
+
 ### Negative Rewards
-- -0.5 → Collision / invalid move
-- -50 → Battery depletion (episode ends)
+- -0.5 → Collision / invalid move  
+- -50 → Battery depletion  
+
 ---
+
 ## Observation Space
-Each robot receives:
-- 5x5 local grid (LiDAR-like view)
+Each robot gets a **31-dimensional vector**:
+- 5x5 local grid (25 values)
 - Battery level
 - Carrying status
-- Relative position to:
-- target
-- nearest charger
-Total: 31-dimensional vector
+- Relative target position
+- Relative charger position
+
 ---
+
 ## Action Space
-- 0: Up
-- 1: Down
-- 2: Left
-- 3: Right
-- 4: Stay
+- 0: Up  
+- 1: Down  
+- 2: Left  
+- 3: Right  
+- 4: Stay  
+
 ---
+
 ## Difficulty Levels
-### Easy (easy_delivery)
-- 1 box
-- Low battery drain (0.5)
-- Simple navigation
-### Medium (multi_order)
-- 4 boxes
-- Moderate battery drain (1.5)
-- Requires coordination
-### Hard (hard_fleet_management)
-- 8 boxes
-- High battery drain (3.0)
-- Complex coordination + charging optimization
+
+### Easy (`easy_delivery`)
+- 1 box  
+- Low battery drain  
+- Simple navigation  
+
+### Medium (`multi_order`)
+- 4 boxes  
+- Moderate battery drain  
+- Requires coordination  
+
+### Hard (`hard_fleet`)
+- 8 boxes  
+- High battery drain  
+- Complex coordination + charging  
+
 ---
+
 ## Episode Termination
-- All boxes delivered
-- Battery reaches 0
-- Max steps reached (100)
+- All boxes delivered  
+- Battery reaches 0  
+- Max steps reached  
+
 ---
-## Key Challenges Solved
-- Multi-agent coordination
-- Dynamic task allocation
-- Energy-aware planning
-- Collision avoidance
+
+## Key Contributions
+- Designed a **custom multi-robot simulation environment**
+- Implemented **collision-safe movement logic**
+- Built **task allocation and navigation system**
+- Created **RL-compatible observation + reward system**
+
 ---
+
 ## Conclusion
-This system demonstrates how reinforcement learning can be used to build intelligent, autonomous
-fleet management systems similar to real-world warehouse robots.
+
+This project demonstrates how a **Fleet Management System can be built using rule-based planning**.  
+
+While current implementation uses **heuristics (path planning + allocation)**,  
+it can be extended with **Reinforcement Learning** to achieve:
+
+- Smarter decision making  
+- Better coordination  
+- Efficient energy usage  
+- Reduced collisions  
+
+👉 This makes it a strong foundation for real-world warehouse robotics systems.
